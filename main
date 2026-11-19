@@ -1,0 +1,259 @@
+
+# Họ tên: Lê Hùng Cường
+# MSSV: 202418859
+
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from datetime import datetime
+from typing import List, Optional
+
+
+#  ADAPTER
+class ISensor(ABC):
+    @abstractmethod
+    def read_value(self) -> float: ...
+    @abstractmethod
+    def get_unit(self) -> str: ...
+
+
+class LegacySmokeDetector:
+    """Lớp cũ – giả định KHÔNG được sửa"""
+    def __init__(self, smoke_level: int = 0):
+        self._smoke_level = max(0, min(1000, smoke_level))
+
+    def get_smoke_level(self) -> int:
+        return self._smoke_level  # 0..1000
+
+    def get_description(self) -> str:
+        return "Legacy smoke detector"
+
+    def set_smoke_level(self, value: int):
+        self._smoke_level = max(0, min(1000, value))
+
+
+class SmokeSensorAdapter(ISensor):
+    def __init__(self, legacy: LegacySmokeDetector):
+        if legacy is None:
+            raise ValueError("legacy không được null")
+        self._legacy = legacy
+
+    def read_value(self) -> float:
+        return self._legacy.get_smoke_level() / 100.0
+
+    def get_unit(self) -> str:
+        return "% smoke"
+
+
+#  ALERT EVENT
+@dataclass(frozen=True)
+class AlertEvent:
+    sensor_name: str
+    value: float
+    unit: str
+    severity: str
+    occurred_at: datetime
+
+
+# OBSERVER
+class IAlertObserver(ABC):
+    @abstractmethod
+    def update(self, alert_event: AlertEvent) -> None: ...
+
+
+class DashboardObserver(IAlertObserver):
+    def update(self, alert_event: AlertEvent) -> None:
+        print(f"[DASHBOARD] {alert_event.sensor_name}: "
+              f"{alert_event.value:.1f}{alert_event.unit} [{alert_event.severity}]")
+
+
+class EmailAlertObserver(IAlertObserver):
+    def update(self, alert_event: AlertEvent) -> None:
+        print(f"[EMAIL] Gửi cảnh báo tới admin@campus.edu: "
+              f"{alert_event.sensor_name} = {alert_event.value:.1f} "
+              f"({alert_event.severity})")
+
+
+class AuditLogObserver(IAlertObserver):
+    def __init__(self):
+        self.logs: List[str] = []
+
+    def update(self, alert_event: AlertEvent) -> None:
+        entry = (f"{alert_event.occurred_at.isoformat()} | "
+                 f"{alert_event.sensor_name} | {alert_event.value:.1f} | "
+                 f"{alert_event.severity}")
+        self.logs.append(entry)
+        print(f"[AUDIT] {entry}")
+
+
+class SensorMonitor:
+    def __init__(self):
+        self._observers: List[IAlertObserver] = []
+
+    def attach(self, observer: IAlertObserver) -> None:
+        if observer is None:
+            raise ValueError("observer không được null")
+        self._observers.append(observer)
+
+    def detach(self, observer: IAlertObserver) -> None:
+        if observer in self._observers:
+            self._observers.remove(observer)
+
+    def check_sensor(self, sensor_name: str, sensor: ISensor) -> None:
+        value = sensor.read_value()
+        if value >= 60:
+            severity = "CRITICAL"
+        elif value >= 40:
+            severity = "WARNING"
+        else:
+            return
+
+        alert = AlertEvent(
+            sensor_name=sensor_name,
+            value=value,
+            unit=sensor.get_unit(),
+            severity=severity,
+            occurred_at=datetime.now()
+        )
+        self._notify(alert)
+
+    def _notify(self, alert_event: AlertEvent) -> None:
+        for observer in self._observers:
+            try:
+                observer.update(alert_event)
+            except Exception as ex:
+                print(f"[ERROR] Observer lỗi: {ex}")
+
+class AlarmController:
+    def activate(self):
+        print("  >> ALARM: Còi báo động KÍCH HOẠT")
+
+    def deactivate(self):
+        print("  >> ALARM: Còi báo động TẮT")
+
+
+class DoorController:
+    def unlock_emergency_exit(self):
+        print("  >> DOOR: Cửa thoát hiểm ĐÃ MỞ")
+
+    def lock_all(self):
+        print("  >> DOOR: Tất cả cửa ĐÃ KHÓA")
+
+
+class VentilationController:
+    def start_exhaust(self):
+        print("  >> VENT: Hệ thống hút khói BẬT")
+
+    def stop(self):
+        print("  >> VENT: Hệ thống hút khói TẮT")
+
+
+class IEmergencyMediator(ABC):
+    @abstractmethod
+    def handle_critical_alert(self, alert: AlertEvent) -> None: ...
+
+
+class EmergencyMediator(IEmergencyMediator):
+    def __init__(self, alarm: AlarmController, door: DoorController,
+                 vent: VentilationController):
+        self._alarm = alarm
+        self._door = door
+        self._vent = vent
+
+    def handle_critical_alert(self, alert: AlertEvent) -> None:
+        print(f"\n[MEDIATOR] Xử lý CRITICAL từ {alert.sensor_name}")
+        self._alarm.activate()
+        self._door.lock_all()
+        self._vent.start_exhaust()
+
+
+class EmergencyBridgeObserver(IAlertObserver):
+    """Chuyển cảnh báo CRITICAL sang Mediator"""
+    def __init__(self, mediator: IEmergencyMediator):
+        self._mediator = mediator
+
+    def update(self, alert_event: AlertEvent) -> None:
+        if alert_event.severity == "CRITCAL":
+            self._mediator.handle_critical_alert(alert_event)
+
+
+# MENU
+def print_menu():
+    print("1. Đặt mức khói trên cảm biến cũ (0-1000)")
+    print("2. Kiểm tra cảm biến (CheckSensor)")
+    print("3. Xem log Audit")
+    print("4. Gỡ / Đăng ký lại observer")
+    print("0. Thoát")
+
+
+def main():
+    # Khởi tạo
+    legacy = LegacySmokeDetector(200)          # mức thấp ban đầu
+    sensor = SmokeSensorAdapter(legacy)
+
+    monitor = SensorMonitor()
+    dashboard = DashboardObserver()
+    email = EmailAlertObserver()
+    audit = AuditLogObserver()
+
+    alarm = AlarmController()
+    door = DoorController()
+    vent = VentilationController()
+    mediator = EmergencyMediator(alarm, door, vent)
+    bridge = EmergencyBridgeObserver(mediator)
+
+    monitor.attach(dashboard)
+    monitor.attach(email)
+    monitor.attach(audit)
+    monitor.attach(bridge)
+
+    print(" Campus Safety Hub đã sẵn sàng ")
+    print(f"Cảm biến: {legacy.get_description()}")
+
+    while True:
+        print_menu()
+        choice = input("Chọn: ").strip()
+
+        try:
+            if choice == "1":
+                val = int(input("Mức khói (0-1000): "))
+                legacy.set_smoke_level(val)
+                print(f"Đã đặt mức khói = {legacy.get_smoke_level()} "
+                      f"(tương đương {sensor.read_value():.1f}{sensor.get_unit()})")
+
+            elif choice == "2":
+                print("\n Kiểm tra cảm biến")
+                monitor.check_sensor("Lab-Room-Smoke", sensor)
+
+            elif choice == "3":
+                print("\n Audit Log ")
+                if not audit.logs:
+                    print("  (trống)")
+                for log in audit.logs:
+                    print(" ", log)
+
+            elif choice == "4":
+                print("1. Gỡ EmailObserver  2. Đăng ký lại EmailObserver")
+                sub = input("Chọn: ").strip()
+                if sub == "1":
+                    monitor.detach(email)
+                    print("Đã gỡ EmailAlertObserver")
+                elif sub == "2":
+                    monitor.attach(email)
+                    print("Đã đăng ký lại EmailAlertObserver")
+
+
+            elif choice == "0":
+                print("Tạm biệt!")
+                break
+            else:
+                print("Lựa chọn không hợp lệ.")
+
+        except ValueError as e:
+            print(f"[LỖI DỮ LIỆU] {e}")
+        except Exception as e:
+            print(f"[LỖI HỆ THỐNG] {type(e).__name__}: {e}")
+
+
+if __name__ == "__main__":
+    main()
