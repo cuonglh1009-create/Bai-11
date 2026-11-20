@@ -93,7 +93,8 @@ class SensorMonitor:
     def attach(self, observer: IAlertObserver) -> None:
         if observer is None:
             raise ValueError("observer không được null")
-        self._observers.append(observer)
+        if observer not in self._observers:
+            self._observers.append(observer)
 
     def detach(self, observer: IAlertObserver) -> None:
         if observer in self._observers:
@@ -118,7 +119,7 @@ class SensorMonitor:
         self._notify(alert)
 
     def _notify(self, alert_event: AlertEvent) -> None:
-        for observer in self._observers:
+        for observer in list(self._observers):
             try:
                 observer.update(alert_event)
             except Exception as ex:
