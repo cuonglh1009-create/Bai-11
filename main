@@ -39,7 +39,7 @@ class SmokeSensorAdapter(ISensor):
         self._legacy = legacy
 
     def read_value(self) -> float:
-        return self._legacy.get_smoke_level() / 100.0
+        return self._legacy.get_smoke_level() / 10.0
 
     def get_unit(self) -> str:
         return "% smoke"
@@ -102,9 +102,9 @@ class SensorMonitor:
 
     def check_sensor(self, sensor_name: str, sensor: ISensor) -> None:
         value = sensor.read_value()
-        if value >= 60:
+        if value >= 70:
             severity = "CRITICAL"
-        elif value >= 40:
+        elif value >= 50:
             severity = "WARNING"
         else:
             return
@@ -174,7 +174,7 @@ class EmergencyBridgeObserver(IAlertObserver):
         self._mediator = mediator
 
     def update(self, alert_event: AlertEvent) -> None:
-        if alert_event.severity == "CRITCAL":
+        if alert_event.severity == "CRITICAL":
             self._mediator.handle_critical_alert(alert_event)
 
 
